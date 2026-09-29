@@ -1,0 +1,18 @@
+.git
+.agents
+.codex
+.claude
+node_modules
+.next
+.venv
+.venv-download
+**/__pycache__
+.pytest_cache
+data
+.env*
+*.tsbuildinfo
+artifacts
+test-results
+playwright-report
+# Retain resumable download metadata locally, but never send it to Docker.
+models/**/.cache

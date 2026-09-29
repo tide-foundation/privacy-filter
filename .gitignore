@@ -11,3 +11,5 @@ artifacts/
 test-results/
 playwright-report/
 .claude/settings.local.json
+models/
+.venv-download/

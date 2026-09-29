@@ -40,6 +40,24 @@ For NVIDIA GPUs, install a compatible PyTorch/CUDA build and set `OPF_DEVICE=cud
 
 Production frontend: `npm run build && npm start`, alongside the same Python service. Keep one Python worker: the model and processing queue are deliberately shared inside that process. Do not enable uvicorn reload during processing.
 
+## Run with Docker
+
+Download the model and tokenizer **before building the application image**, using a small downloader container. Only Docker is required on the host; Python and the download dependencies are installed inside the downloader image. Run these commands from the repository root (Bash):
+
+```bash
+docker build --target model-download -t privacy-filter-download .
+mkdir -p models
+docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,source=$(pwd)/models,target=/app/models" \
+  privacy-filter-download
+docker build -t privacy-filter .
+docker run --rm -p 3000:3000 -v privacy-data:/app/data privacy-filter
+```
+
+The download is stored in `models/privacy-filter/` on your disk and ignored by Git. Keep this directory for future builds: Docker copies the weights and tokenizer into the image, so builds and container runs do not download them. A fresh checkout must run the download command before its first build. Re-running the downloader container checks Hugging Face for updates and reuses unchanged files; interrupted downloads can be resumed by running it again. The bind mount preserves the downloaded files after the container exits; `--user` keeps them owned by your host user on Linux. Delete the directory only if you want to discard this local cache.
+
+The image sets `OPF_CHECKPOINT` and `TIKTOKEN_CACHE_DIR` to the embedded assets and enables Hugging Face offline mode. The build checks the checkpoint layout and loads the tokenizer with networking disabled; it does not load the full model into RAM. Model inference still initializes on the first document. Dependency installation requires internet on an uncached build, but the model download is independent of Docker's build cache, including `--no-cache` builds.
+
 ## What the app does
 
 1. Accepts a PDF/DOCX of at most 20 MB; validates its readable content.
