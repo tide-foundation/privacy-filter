@@ -13,7 +13,7 @@ from uuid import uuid4, UUID
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from backend.documents import DocumentError, replacement_plan, export_files
+from backend.documents import DocumentError, replacement_plan, export_with_fallback
 from backend.layout import load_document
 
 ROOT = Path(os.environ.get('PRIVACY_DATA_DIR', './data')).resolve()
@@ -39,6 +39,9 @@ async def lifespan(app):
         columns = {row['name'] for row in conn.execute('PRAGMA table_info(documents)')}
         if 'source_type' not in columns:
             conn.execute('ALTER TABLE documents ADD COLUMN source_type TEXT')
+        if 'layout_preserved' not in columns:
+            conn.execute('ALTER TABLE documents ADD COLUMN layout_preserved INTEGER')
+            conn.execute("UPDATE documents SET layout_preserved=1 WHERE status='complete' AND source_type IS NOT NULL")
         conn.execute("UPDATE documents SET status='failed', error='Processing was interrupted. Please upload again.' WHERE status IN ('queued','processing')")
         failed = conn.execute("SELECT id FROM documents WHERE status='failed'").fetchall()
     for row in failed:
@@ -78,12 +81,12 @@ def run_job(identifier, data, suffix, mode):
         if result.text != text:
             raise DocumentError('The model changed the input text during tokenization. No output was saved because document positions would be unreliable.')
         sanitized, counts, edits = replacement_plan(result, mode)
-        export_files(sanitized, ROOT / identifier)
-        source.save(ROOT / identifier / f'sanitized{suffix}', edits)
-        warning = ' '.join(message for message in (result.warning, source.warning) if message) or None
+        layout_preserved = export_with_fallback(sanitized, ROOT / identifier, source, suffix, edits)
+        export_warning = source.warning if layout_preserved else 'Original layout unavailable; clean rewrite used.'
+        warning = ' '.join(message for message in (result.warning, export_warning) if message) or None
         with db() as conn:
-            conn.execute("UPDATE documents SET status='complete', counts=?, warning=? WHERE id=?",
-                         (json.dumps(counts), warning, identifier))
+            conn.execute("UPDATE documents SET status='complete', counts=?, warning=?, layout_preserved=? WHERE id=?",
+                         (json.dumps(counts), warning, int(layout_preserved), identifier))
     except Exception as exc:
         shutil.rmtree(ROOT / identifier, ignore_errors=True)
         # Parser/model exception strings can contain private input. Only expose our own validation messages.

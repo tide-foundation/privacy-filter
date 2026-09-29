@@ -61,3 +61,20 @@ def test_scanned_pdf_is_rejected():
     page.insert_image(pymupdf.Rect(0, 0, 100, 100), pixmap=pix)
     with pytest.raises(ValueError, match='scanned page'): extract(doc.tobytes(), '.pdf')
     doc.close()
+
+
+@pytest.mark.parametrize('suffix', ['.pdf', '.docx'])
+@pytest.mark.parametrize('error_type', [ValueError, RuntimeError])
+def test_partial_native_export_keeps_clean_rewrite(tmp_path, suffix, error_type):
+    from backend.documents import export_with_fallback
+    def failed_save(path, edits):
+        path.write_bytes(b'partial invalid native output')
+        raise error_type('Native export failed after writing')
+    source = SimpleNamespace(save=failed_save)
+    folder = tmp_path / 'outputs'
+    assert not export_with_fallback('Hello [Name].', folder, source, suffix, [])
+    assert sorted(p.name for p in folder.iterdir()) == ['sanitized.docx', 'sanitized.pdf', 'sanitized.txt']
+    assert (folder / 'sanitized.txt').read_text() == 'Hello [Name].'
+    assert Document(folder / 'sanitized.docx').paragraphs[0].text == 'Hello [Name].'
+    with pymupdf.open(folder / 'sanitized.pdf') as pdf:
+        assert 'Hello [Name].' in pdf[0].get_text()

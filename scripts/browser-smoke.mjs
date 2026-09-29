@@ -35,8 +35,13 @@ try {
   assert.equal(await page.locator('.processing-ring').evaluate(el => getComputedStyle(el).animationName), 'spin');
   await page.screenshot({ path: 'artifacts/processing.png', fullPage: true });
   docs[0].status = 'complete';
+  docs[0].source_type = 'pdf';
+  docs[0].layout_preserved = false;
+  docs[0].warning = 'Original layout unavailable; clean rewrite used.';
   await page.getByText('2 names', { exact: true }).waitFor();
   assert.equal(await page.locator('.processing-ring').count(), 0);
+  await page.getByText('Original layout unavailable; clean rewrite used.').waitFor();
+  assert.equal(await page.getByRole('link', { name: /Download PDF/ }).getAttribute('title'), 'Rebuilt text');
   assert.equal(await page.getByText('complete', { exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await page.getByText('Alex Example 1 contacted Alex Example 1.', { exact: true }).waitFor();

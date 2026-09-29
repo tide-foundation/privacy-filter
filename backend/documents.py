@@ -97,3 +97,19 @@ def export_files(text: str, folder: Path):
             more, _ = story.place(pymupdf.Rect(45, 45, 550, 797))
             story.draw(device)
             writer.end_page()
+
+
+def export_with_fallback(text: str, folder: Path, source, suffix: str, edits: list[Edit]) -> bool:
+    """Keep a complete clean rewrite unless native export finishes successfully."""
+    export_files(text, folder)
+    temporary = folder / f'.native{suffix}'
+    try:
+        source.save(temporary, edits)
+        temporary.replace(folder / f'sanitized{suffix}')
+        return True
+    except Exception:
+        # The rewrite already contains the validated replacements. A native
+        # renderer failure (even after a partial write) must not destroy it.
+        return False
+    finally:
+        temporary.unlink(missing_ok=True)
