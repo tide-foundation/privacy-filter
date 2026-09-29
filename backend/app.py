@@ -13,7 +13,8 @@ from uuid import uuid4, UUID
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from backend.documents import extract, transform, export_files
+from backend.documents import DocumentError, replacement_plan, export_files
+from backend.layout import load_document
 
 ROOT = Path(os.environ.get('PRIVACY_DATA_DIR', './data')).resolve()
 LIMIT = 20 * 1024 * 1024
@@ -35,6 +36,9 @@ async def lifespan(app):
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     with db() as conn:
         conn.execute('CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, created TEXT, mode TEXT, status TEXT, counts TEXT, error TEXT, warning TEXT)')
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(documents)')}
+        if 'source_type' not in columns:
+            conn.execute('ALTER TABLE documents ADD COLUMN source_type TEXT')
         conn.execute("UPDATE documents SET status='failed', error='Processing was interrupted. Please upload again.' WHERE status IN ('queued','processing')")
         failed = conn.execute("SELECT id FROM documents WHERE status='failed'").fetchall()
     for row in failed:
@@ -60,36 +64,37 @@ async def local_only(request: Request, call_next):
 
 def run_job(identifier, data, suffix, mode):
     global model, active
+    source = None
     try:
         with db() as conn:
             conn.execute("UPDATE documents SET status='processing' WHERE id=?", (identifier,))
-        text = extract(data, suffix)
+        source = load_document(data, suffix)
+        text = source.text
         del data
         if model is None:
             from opf import OPF
             model = OPF(device=os.environ.get('OPF_DEVICE', 'cpu'), output_mode='typed')
         result = model.redact(text)
-        sanitized, counts = transform(result, mode)
+        if result.text != text:
+            raise DocumentError('The model changed the input text during tokenization. No output was saved because document positions would be unreliable.')
+        sanitized, counts, edits = replacement_plan(result, mode)
         export_files(sanitized, ROOT / identifier)
+        source.save(ROOT / identifier / f'sanitized{suffix}', edits)
+        warning = ' '.join(message for message in (result.warning, source.warning) if message) or None
         with db() as conn:
             conn.execute("UPDATE documents SET status='complete', counts=?, warning=? WHERE id=?",
-                         (json.dumps(counts), result.warning, identifier))
+                         (json.dumps(counts), warning, identifier))
     except Exception as exc:
         shutil.rmtree(ROOT / identifier, ignore_errors=True)
         # Parser/model exception strings can contain private input. Only expose our own validation messages.
-        safe = str(exc) if isinstance(exc, ValueError) and exc.__traceback__ and _is_validation(exc) else 'Processing failed. Check that the model is installed, its checkpoint is available, and the document is readable.'
+        safe = str(exc) if isinstance(exc, DocumentError) else 'Processing failed. Check that the model is installed, its checkpoint is available, and the document is readable.'
         with db() as conn:
             conn.execute("UPDATE documents SET status='failed', error=? WHERE id=?", (safe, identifier))
     finally:
+        if source is not None:
+            source.close()
         with slots:
             active -= 1
-
-
-def _is_validation(exc):
-    tb = exc.__traceback__
-    while tb.tb_next:
-        tb = tb.tb_next
-    return tb.tb_frame.f_code.co_filename.endswith('/backend/documents.py')
 
 
 @app.get('/health')
@@ -129,8 +134,8 @@ async def upload(request: Request):
             raise HTTPException(400, 'The file is empty.')
         identifier = str(uuid4())
         with db() as conn:
-            conn.execute('INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?)',
-                         (identifier, datetime.now(timezone.utc).isoformat(), mode, 'queued', '{}', None, None))
+            conn.execute('INSERT INTO documents (id, created, mode, status, counts, error, warning, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                         (identifier, datetime.now(timezone.utc).isoformat(), mode, 'queued', '{}', None, None, suffix[1:]))
         pool.submit(run_job, identifier, bytes(data), suffix, mode)
         return {'id': identifier}
     except BaseException:

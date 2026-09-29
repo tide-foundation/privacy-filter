@@ -42,3 +42,28 @@ def test_upload_download_delete_and_origin_protection(tmp_path, monkeypatch):
         assert not (tmp_path / identifier).exists()
         assert client.get('/documents').json() == []
         assert client.get(f'/documents/{identifier}/download/pdf').status_code == 404
+
+
+def test_changed_tokenizer_text_fails_without_saving_outputs(tmp_path, monkeypatch):
+    class MismatchDetector:
+        _runtime = True
+        def redact(self, text):
+            return SimpleNamespace(text='Changed ' + text, detected_spans=[], warning='Mismatch')
+    monkeypatch.setattr(service, 'ROOT', tmp_path)
+    monkeypatch.setattr(service, 'model', MismatchDetector())
+    monkeypatch.setattr(service, 'pool', ThreadPoolExecutor(max_workers=1))
+    original_find = service.importlib.util.find_spec
+    monkeypatch.setattr(service.importlib.util, 'find_spec', lambda name: True if name == 'opf' else original_find(name))
+    doc = Document(); doc.add_paragraph('Hello Alice.'); data = BytesIO(); doc.save(data)
+    with TestClient(service.app) as client:
+        response = client.post('/documents?type=.docx', content=data.getvalue())
+        identifier = response.json()['id']
+        for _ in range(100):
+            items = client.get('/documents').json()
+            if items[0]['status'] == 'failed': break
+            time.sleep(.02)
+        assert items[0]['status'] == 'failed'
+        assert 'tokenization' in items[0]['error']
+        assert items[0]['source_type'] == 'docx'
+        assert not (tmp_path / identifier).exists()
+        assert client.get(f'/documents/{identifier}/download/docx').status_code == 404
