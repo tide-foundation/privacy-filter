@@ -1,0 +1,3 @@
+# Lightweight preparation environment; no PyTorch or OPF installation needed.
+huggingface_hub>=0.34,<2
+tiktoken>=0.12,<1
