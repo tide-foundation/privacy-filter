@@ -110,3 +110,32 @@ def test_pdf_fit_failure_completes_with_clean_downloads(tmp_path, monkeypatch):
                         text = ''.join(p.get_text() for p in output)
                 assert replacement in text and 'Li' not in text
             assert not list((tmp_path / identifier).glob('.native*'))
+
+
+def test_sensitivity_validation_and_job_setting(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, 'ROOT', tmp_path)
+    monkeypatch.setattr(service, 'model', Detector())
+    monkeypatch.setattr(service, 'pool', ThreadPoolExecutor(max_workers=1))
+    original_find = service.importlib.util.find_spec
+    monkeypatch.setattr(service.importlib.util, 'find_spec', lambda name: True if name == 'opf' else original_find(name))
+    seen = []
+    def calibrated(model, text, sensitivity, cache_dir):
+        seen.append(sensitivity)
+        return model.redact(text)
+    monkeypatch.setattr(service, 'redact', calibrated)
+    doc = Document(); doc.add_paragraph('Hello Alice.'); data = BytesIO(); doc.save(data)
+    with TestClient(service.app) as client:
+        for invalid in ('-5', '105', '51', '75.5', 'nan', ''):
+            assert client.post(f'/documents?type=.docx&sensitivity={invalid}', content=data.getvalue()).status_code == 400
+        assert client.get('/documents').json() == []
+        for level in (75, 25):
+            response = client.post(f'/documents?type=.docx&sensitivity={level}', content=data.getvalue())
+            assert response.status_code == 202
+            identifier = response.json()['id']
+            for _ in range(100):
+                row = next(r for r in client.get('/documents').json() if r['id'] == identifier)
+                if row['status'] in {'complete', 'failed'}: break
+                time.sleep(.02)
+            assert row['status'] == 'complete', row
+            assert row['sensitivity'] == level
+        assert seen == [75, 25]

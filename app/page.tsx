@@ -1,6 +1,6 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowRight, Check, FileText, LoaderCircle, Trash2, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { ArrowDownToLine, ArrowRight, Check, CircleHelp, FileText, LoaderCircle, Trash2, Upload, X } from 'lucide-react';
 type Doc = { layout_preserved?: boolean; source_type?: string; id: string; created: string; mode: string; status: string; counts: Record<string, number>; error?: string; warning?: string };
 type Health = { model_installed: boolean; model_loaded: boolean; device: string };
 const labels: Record<string, string> = { private_person: 'Names', private_address: 'Addresses', private_email: 'Emails', private_phone: 'Phone numbers', private_date: 'Dates', private_url: 'URLs', account_number: 'Accounts', secret: 'Secrets' };
@@ -10,9 +10,27 @@ async function api(path: string, init?: RequestInit) {
   if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'The request could not be completed.');
   return data;
 }
+function HelpTip({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const root = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [open]);
+  return <span className="help" ref={root}>
+    <button type="button" className="help-button" aria-label={`About ${label}`} aria-expanded={open} aria-controls={id} aria-describedby={open ? id : undefined} onClick={() => setOpen(!open)}><CircleHelp size={15}/></button>
+    {open && <span className="help-tip" id={id} role="tooltip">{children}</span>}
+  </span>;
+}
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState('placeholder');
+  const [sensitivity, setSensitivity] = useState(50);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState('');
@@ -45,11 +63,12 @@ export default function Home() {
     setBusy(true); setError('');
     try {
       const suffix = '.' + file.name.split('.').pop()!.toLowerCase();
-      await api(`documents?mode=${mode}&type=${suffix}`, { method: 'POST', body: file });
+      await api(`documents?mode=${mode}&type=${suffix}&sensitivity=${sensitivity}`, { method: 'POST', body: file });
       setFile(null); if (input.current) input.current.value = ''; await refresh();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   async function remove(id: string) {
+    if (!window.confirm("Are you sure you want to trash this file?")) return;
     setDeleting(id); setError('');
     try { await api(`documents/${id}`, { method: 'DELETE' }); if (preview?.id === id) setPreview(null); await refresh(); }
     catch (e) { setError((e as Error).message); } finally { setDeleting(null); }
@@ -71,15 +90,21 @@ export default function Home() {
           <strong>{file ? file.name : 'Choose a file'}</strong>
           <small>{file ? `${(file.size / 1024).toFixed(0)} KB` : 'PDF / DOCX · 20 MB max'}</small>
         </label>
+        <div className="sensitivity">
+          <div className="sensitivity-heading"><label htmlFor="sensitivity">Sensitivity</label><HelpTip label="sensitivity">Higher flags more potential sensitive text, but may also catch ordinary text. 50 uses the model’s default.</HelpTip><output htmlFor="sensitivity">{sensitivity}</output></div>
+          <input id="sensitivity" type="range" min="0" max="100" step="5" value={sensitivity} onChange={e => setSensitivity(Number(e.target.value))} />
+          <div className="range-labels" aria-hidden="true"><span>Low</span><span>High</span></div>
+        </div>
         <div className="form-actions">
           <fieldset aria-label="Replacement mode">
-            {[['placeholder', 'Placeholders'], ['synthetic', 'Synthetic data']].map(([value, title]) => (
+            {[['placeholder', 'Rip'], ['synthetic', 'Replace']].map(([value, title]) => (
               <label key={value} className={`mode-option ${mode === value ? 'active' : ''}`}>
                 <input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} />
                 <span className="radio-mark">{mode === value && <Check size={12}/>}</span>
                 {title}
               </label>
             ))}
+            <HelpTip label="Rip and Replace"><strong>Rip:</strong> insert labels like [Name] and [Date].<br/><strong>Replace:</strong> use consistent fictional data.</HelpTip>
           </fieldset>
           <button className="primary" type="submit" disabled={!file || busy || !health?.model_installed}>
             {busy ? <><LoaderCircle className="spin" size={17}/> Uploading…</> : <>Cleanse <ArrowRight size={17}/></>}
@@ -96,7 +121,7 @@ export default function Home() {
                     <span className="sr-only">{doc.status === 'queued' ? 'Queued' : 'Processing'}</span>
                   </span>
                 )}
-                {doc.status === 'failed' && <span className="status failed">Failed</span>}</h3><p>{new Date(doc.created).toLocaleString()} <span>·</span> {doc.mode === 'placeholder' ? 'Placeholders' : 'Synthetic data'}</p>{doc.status === 'complete' && <div className="counts">{Object.entries(doc.counts).length ? Object.entries(doc.counts).map(([key, value]) => <span key={key}>{value} {labels[key]?.toLowerCase() || key}</span>) : <span>No detections</span>}</div>}{doc.error && <p className="doc-error">{doc.error}</p>}{doc.warning && <p className="doc-warning">{doc.warning}</p>}</div><div className="doc-actions">{doc.status === 'complete' && <><button className="text-button" onClick={() => openPreview(doc.id)}>Preview</button><div className="downloads">{(doc.source_type === 'pdf' ? ['pdf', 'docx', 'txt'] : ['docx', 'pdf', 'txt']).map(ext => <a key={ext} title={doc.source_type === ext && doc.layout_preserved ? "Original layout" : "Rebuilt text"} href={`/api/service/documents/${doc.id}/download/${ext}`} aria-label={`Download ${ext.toUpperCase()} for document ${doc.id.slice(0,8)}`}><ArrowDownToLine size={13}/>{ext.toUpperCase()}</a>)}</div></>}<button className="delete" onClick={() => remove(doc.id)} disabled={['queued', 'processing'].includes(doc.status) || deleting === doc.id} aria-label={`Delete document ${doc.id.slice(0, 8)} and all its output files`} title="Delete document and all output files">{deleting === doc.id ? <LoaderCircle className="spin" size={17}/> : <Trash2 size={17}/>}</button></div></article>)}</div>}
+                {doc.status === 'failed' && <span className="status failed">Failed</span>}</h3><p>{new Date(doc.created).toLocaleString()} <span>·</span> {doc.status === 'complete' ? (doc.mode === 'placeholder' ? 'Ripped' : 'Replaced') : (doc.mode === 'placeholder' ? 'Rip' : 'Replace')}</p>{doc.status === 'complete' && <div className="counts">{Object.entries(doc.counts).length ? Object.entries(doc.counts).map(([key, value]) => <span key={key}>{value} {labels[key]?.toLowerCase() || key}</span>) : <span>No detections</span>}</div>}{doc.error && <p className="doc-error">{doc.error}</p>}{doc.warning && <p className="doc-warning">{doc.warning}</p>}</div><div className="doc-actions">{doc.status === 'complete' && <><button className="text-button" onClick={() => openPreview(doc.id)}>Preview</button><div className="downloads">{(doc.source_type === 'pdf' ? ['pdf', 'docx', 'txt'] : ['docx', 'pdf', 'txt']).map(ext => <a key={ext} title={doc.source_type === ext && doc.layout_preserved ? "Original layout" : "Rebuilt text"} href={`/api/service/documents/${doc.id}/download/${ext}`} aria-label={`Download ${ext.toUpperCase()} for document ${doc.id.slice(0,8)}`}><ArrowDownToLine size={13}/>{ext.toUpperCase()}</a>)}</div></>}<button className="delete" onClick={() => remove(doc.id)} disabled={['queued', 'processing'].includes(doc.status) || deleting === doc.id} aria-label={`Delete document ${doc.id.slice(0, 8)} and all its output files`} title="Delete document and all output files">{deleting === doc.id ? <LoaderCircle className="spin" size={17}/> : <Trash2 size={17}/>}</button></div></article>)}</div>}
       </section>
     </main><dialog ref={dialog} onCancel={() => setPreview(null)} onClick={e => { if (e.target === e.currentTarget) setPreview(null); }}><div className="preview-header"><h2>Preview</h2><button aria-label="Close preview" onClick={() => setPreview(null)}><X/></button></div><pre>{preview?.text}</pre></dialog>
   </>;

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from backend.documents import DocumentError, replacement_plan, export_with_fallback
 from backend.layout import load_document
+from backend.sensitivity import redact
 
 ROOT = Path(os.environ.get('PRIVACY_DATA_DIR', './data')).resolve()
 LIMIT = 20 * 1024 * 1024
@@ -37,6 +38,8 @@ async def lifespan(app):
     with db() as conn:
         conn.execute('CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, created TEXT, mode TEXT, status TEXT, counts TEXT, error TEXT, warning TEXT)')
         columns = {row['name'] for row in conn.execute('PRAGMA table_info(documents)')}
+        if 'sensitivity' not in columns:
+            conn.execute('ALTER TABLE documents ADD COLUMN sensitivity INTEGER NOT NULL DEFAULT 50')
         if 'source_type' not in columns:
             conn.execute('ALTER TABLE documents ADD COLUMN source_type TEXT')
         if 'layout_preserved' not in columns:
@@ -65,7 +68,7 @@ async def local_only(request: Request, call_next):
     return response
 
 
-def run_job(identifier, data, suffix, mode):
+def run_job(identifier, data, suffix, mode, sensitivity=50):
     global model, active
     source = None
     try:
@@ -77,7 +80,7 @@ def run_job(identifier, data, suffix, mode):
         if model is None:
             from opf import OPF
             model = OPF(device=os.environ.get('OPF_DEVICE', 'cpu'), output_mode='typed')
-        result = model.redact(text)
+        result = redact(model, text, sensitivity, ROOT / '.calibration')
         if result.text != text:
             raise DocumentError('The model changed the input text during tokenization. No output was saved because document positions would be unreliable.')
         sanitized, counts, edits = replacement_plan(result, mode)
@@ -121,6 +124,12 @@ async def upload(request: Request):
     suffix = request.query_params.get('type', '')
     if mode not in {'placeholder', 'synthetic'} or suffix not in {'.docx', '.pdf'}:
         raise HTTPException(400, 'Choose a PDF or DOCX and a supported replacement mode.')
+    try:
+        sensitivity = int(request.query_params.get('sensitivity', '50'))
+    except ValueError:
+        raise HTTPException(400, 'Sensitivity must be 0–100 in steps of 5.') from None
+    if sensitivity not in range(0, 101, 5):
+        raise HTTPException(400, 'Sensitivity must be 0–100 in steps of 5.')
     if importlib.util.find_spec('opf') is None:
         raise HTTPException(503, 'Install the local model with: .venv/bin/pip install -r backend/requirements-model.txt')
     with slots:
@@ -137,9 +146,9 @@ async def upload(request: Request):
             raise HTTPException(400, 'The file is empty.')
         identifier = str(uuid4())
         with db() as conn:
-            conn.execute('INSERT INTO documents (id, created, mode, status, counts, error, warning, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                         (identifier, datetime.now(timezone.utc).isoformat(), mode, 'queued', '{}', None, None, suffix[1:]))
-        pool.submit(run_job, identifier, bytes(data), suffix, mode)
+            conn.execute('INSERT INTO documents (id, created, mode, status, counts, error, warning, source_type, sensitivity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                         (identifier, datetime.now(timezone.utc).isoformat(), mode, 'queued', '{}', None, None, suffix[1:], sensitivity))
+        pool.submit(run_job, identifier, bytes(data), suffix, mode, sensitivity)
         return {'id': identifier}
     except BaseException:
         with slots:

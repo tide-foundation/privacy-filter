@@ -9,6 +9,7 @@ import pymupdf
 from docx import Document
 
 BASE = os.environ.get('BASE_URL', 'http://127.0.0.1:3000') + '/api/service'
+SENSITIVITY = int(os.environ.get('SENSITIVITY', '50'))
 TEXT = 'Please contact Alice Smith at alice.smith@example.com. Alice Smith is our account contact.'
 
 
@@ -22,6 +23,7 @@ def verify(client, identifier):
         time.sleep(1)
     else:
         raise TimeoutError('Model job did not finish within ten minutes.')
+    assert row['sensitivity'] == SENSITIVITY, row
     assert row['counts'].get('private_person') == 2, row
     assert row['counts'].get('private_email') == 1, row
     for ext in ('txt', 'docx', 'pdf'):
@@ -47,7 +49,7 @@ with httpx.Client(timeout=30) as client:
             pdf = pymupdf.open(); page = pdf.new_page()
             page.insert_textbox(pymupdf.Rect(50, 50, 540, 200), TEXT)
             payload = pdf.tobytes(); pdf.close()
-        response = client.post(BASE + f'/documents?type={suffix}&mode={mode}', content=payload)
+        response = client.post(BASE + f'/documents?type={suffix}&mode={mode}&sensitivity={SENSITIVITY}', content=payload)
         response.raise_for_status()
         identifier = response.json()['id']
         try:
