@@ -1,7 +1,18 @@
-Brand reference: https://tide.org/
+# Redacted brand assets and fonts
 
-Logo: https://tide.org/assets/tide-logo_white.svg
-Albert Sans: https://tide.org/_next/static/media/0ecabae3741772cf-s.p.woff2
-Inter: https://tide.org/_next/static/media/e4af272ccee01ff0-s.p.woff2
+Original user-supplied SVGs are preserved in `assets/brand/source/`.
+The served black and white logos are in `public/brand/`. Their editable
+Courier New text was replaced by Cousine vector outlines, so neither logo
+requires an installed or proprietary font. Other artwork is unchanged.
 
-Assets copied locally at the user's request. Tide's logo remains its property.
+The interface serves its fonts locally from `public/fonts/`:
+
+- Inter: SIL Open Font License 1.1. License: `Inter-OFL.txt`.
+  Project: https://github.com/rsms/inter
+  Existing WOFF2 originally obtained from Tide's website.
+- Cousine Regular: SIL Open Font License 1.1. License: `Cousine-OFL.txt`.
+  Font and license: https://github.com/google/fonts/tree/main/ofl/cousine
+  Used for typewriter styling and the logo's outlined text.
+
+No runtime font service or paid font subscription is required.
+Unused Albert Sans was removed. The legacy Tide logo is not used by the UI.

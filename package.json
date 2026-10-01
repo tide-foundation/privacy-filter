@@ -1,1 +1,30 @@
-{"name":"local-privacy-studio","version":"0.1.0","private":true,"scripts":{"dev":"next dev --hostname 0.0.0.0","build":"next build","start":"next start --hostname 0.0.0.0","typecheck":"tsc --noEmit","test:browser":"node scripts/browser-smoke.mjs"},"dependencies":{"lucide-react":"^0.468.0","next":"16.3.7","react":"19.2.4","react-dom":"19.2.4"},"devDependencies":{"@playwright/test":"^1.63.0","@types/node":"^22","@types/react":"^19","@types/react-dom":"^19","typescript":"^5.9.3"}}
+{
+  "name": "redacted",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:browser": "node scripts/browser-smoke.mjs && node scripts/browser-file-selection.mjs && node scripts/browser-security-history.mjs && node scripts/browser-provider-state.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1",
+    "@vitejs/plugin-react": "^6.1.1"
+  },
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}

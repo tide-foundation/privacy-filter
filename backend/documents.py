@@ -40,7 +40,7 @@ def replacement_plan(result, mode: str):
     text = result.text
     cursor, pieces, counts, mapping = 0, [], Counter(), {}
     edits = []
-    if mode not in {'placeholder', 'synthetic'}:
+    if mode not in {'redact', 'placeholder', 'synthetic'}:
         raise DocumentError('Unsupported replacement mode.')
     nonce = secrets.token_hex(3)
     for span in sorted(result.detected_spans, key=lambda s: (s.start, s.end)):
@@ -60,7 +60,13 @@ def replacement_plan(result, mode: str):
                 'account_number': f'DEMO-{nonce.upper()}-{n:06d}',
                 'secret': f'SYNTHETIC-{nonce}-{n}',
             }
-            mapping[key] = f'[{LABELS[span.label]}]' if mode == 'placeholder' else dummy[span.label]
+            if mode == 'redact':
+                # Fixed per category: never derive mask length or format from input.
+                mapping[key] = '**/**/**' if span.label == 'private_date' else '******'
+            elif mode == 'placeholder':
+                mapping[key] = f'[{LABELS[span.label]}]'
+            else:
+                mapping[key] = dummy[span.label]
         edits.append(Edit(span.start, span.end, mapping[key]))
         pieces.extend((text[cursor:span.start], mapping[key]))
         cursor = span.end

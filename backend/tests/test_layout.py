@@ -152,3 +152,58 @@ def test_pdf_refuses_unreadable_fit_and_rotated_sensitive_text(tmp_path):
     with pytest.raises(DocumentError, match='rotated'):
         source.save(tmp_path / 'rotated.pdf', [Edit(0, 11, '[Name]')])
     source.close(); doc.close()
+
+
+@pytest.mark.parametrize('suffix', ['.docx', '.pdf'])
+def test_fixed_mask_preserves_native_structure_and_removes_detected_text(tmp_path, suffix):
+    if suffix == '.docx':
+        doc = Document()
+        doc.add_paragraph('Alice Smith / report', style='Title')
+        data = docx_bytes(doc)
+    else:
+        data = make_pdf()
+    source = load_document(data, suffix)
+    try:
+        start = source.text.index('Alice Smith')
+        result = SimpleNamespace(text=source.text, detected_spans=[
+            SimpleNamespace(start=start, end=start + 11, label='private_person'),
+        ])
+        _, _, edits = replacement_plan(result, 'redact')
+        target = tmp_path / f'masked{suffix}'
+        source.save(target, edits)
+        if suffix == '.docx':
+            restored = Document(target)
+            assert restored.paragraphs[0].text == '****** / report'
+            assert restored.paragraphs[0].style.name == 'Title'
+        else:
+            with pymupdf.open(target) as restored:
+                assert len(restored) == 2
+                assert restored[0].rect == pymupdf.Rect(0, 0, 600, 800)
+                assert '******' in restored[0].get_text() and '/ report' in restored[0].get_text()
+                assert len(restored[0].get_drawings()) == 1
+                assert restored[0].search_for('Alice Smith')[0].y0 > 130
+    finally:
+        source.close()
+
+
+def test_real_pdf_fit_failure_keeps_all_clean_fallback_exports(tmp_path):
+    from backend.documents import export_with_fallback
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 100), 'Li', fontsize=12)
+    source = load_document(doc.tobytes(), '.pdf')
+    doc.close()
+    try:
+        result = SimpleNamespace(text=source.text, detected_spans=[
+            SimpleNamespace(start=0, end=2, label='private_person'),
+        ])
+        sanitized, _, edits = replacement_plan(result, 'placeholder')
+        folder = tmp_path / 'fallback'
+        assert export_with_fallback(sanitized, folder, source, '.pdf', edits) is False
+        assert sorted(path.name for path in folder.iterdir()) == ['sanitized.docx', 'sanitized.pdf', 'sanitized.txt']
+        assert (folder / 'sanitized.txt').read_text().strip() == '[Name]'
+        assert Document(folder / 'sanitized.docx').paragraphs[0].text == '[Name]'
+        with pymupdf.open(folder / 'sanitized.pdf') as restored:
+            assert restored[0].get_text().strip() == '[Name]'
+    finally:
+        source.close()

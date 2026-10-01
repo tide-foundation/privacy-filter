@@ -78,3 +78,14 @@ def test_partial_native_export_keeps_clean_rewrite(tmp_path, suffix, error_type)
     assert Document(folder / 'sanitized.docx').paragraphs[0].text == 'Hello [Name].'
     with pymupdf.open(folder / 'sanitized.pdf') as pdf:
         assert 'Hello [Name].' in pdf[0].get_text()
+
+
+@pytest.mark.parametrize('label', ['private_person', 'private_address', 'private_email', 'private_phone', 'private_date', 'private_url', 'account_number', 'secret'])
+def test_redact_masks_do_not_reveal_length_or_format(label):
+    values = ['Li', 'A very long sensitive value', '2026-01-02', '2 January 2026', '01/02/26']
+    expected = '**/**/**' if label == 'private_date' else '******'
+    for value in values:
+        text = f'Before {value} after.'
+        output, counts = transform(result(text, [(7, 7 + len(value), label)]), 'redact')
+        assert output == f'Before {expected} after.'
+        assert counts == {label: 1}

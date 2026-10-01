@@ -1,0 +1,28 @@
+name: redacted
+services:
+  app:
+    image: redacted:local
+    build:
+      context: .
+      args:
+        APP_UID: ${LOCAL_UID:-1000}
+        APP_GID: ${LOCAL_GID:-1000}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDACTED_PORT:-3001}:8000"
+    volumes:
+      - type: bind
+        source: ./data
+        target: /app/data
+        bind:
+          create_host_path: false
+      - model:/models
+    # Guest outputs are temporary; the durable database remains on the bind mount.
+    tmpfs:
+      - /app/data/guest:rw,noexec,nosuid,nodev,size=512m,mode=0700,uid=${LOCAL_UID:-1000},gid=${LOCAL_GID:-1000}
+    # Allow an in-flight job to finish during an intentional shutdown.
+    stop_grace_period: 10m
+volumes:
+  model:
+    name: redacted-model
