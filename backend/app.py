@@ -9,12 +9,17 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from starlette.staticfiles import StaticFiles
 
 from backend.auth import VerifiedOwner, require_owner
+from backend import tide_config
+from backend.tide_setup import router as tide_router
+from backend.tide_onboarding import router as onboarding_router
 from backend.documents import DocumentError, replacement_plan, export_with_fallback
 from backend.guest import COOKIE, GuestStore, document_name, timestamp
-from backend.history import HistoryMetadata, HistoryStore, KINDS, MAX_ARTIFACT
+from backend.history import HistoryMetadata, HistoryStore, ReplacementProjection, KINDS, MAX_ARTIFACT
 from backend.layout import load_document
 from backend.manifest import build_manifest, concealed_review
 from backend.sensitivity import redact
@@ -129,7 +134,12 @@ def health():
 
 @api.get('/capabilities')
 def capabilities():
-    return {'secure_history': {'available': False, 'reason': 'Secure history is not configured.'}}
+    return {'secure_history': {'available': tide_config.load() is not None}}
+
+
+@api.get('/identity')
+def identity(owner: VerifiedOwner = Depends(require_owner)):
+    return {'owner_id': owner.owner_id}
 
 
 @api.get('/guest/current')
@@ -219,8 +229,8 @@ def reveal_detection(identifier: str, category: str, occurrence: str, session=De
 
 @api.get('/guest/documents/{identifier}/protected-manifest')
 def protected_manifest(identifier: str, owner: VerifiedOwner = Depends(require_owner), session=Depends(guest_session)):
-    # Transient handoff for future frontend encryption. Both verified identity
-    # and possession of this guest session are required. Disabled until integration.
+    # Transient handoff for browser encryption. Both verified Tide identity
+    # and possession of this working session are required.
     return guests.get_manifest(session, identifier)
 
 
@@ -288,6 +298,20 @@ async def upload_artifact(identifier: str, kind: str, request: Request, owner: V
     return {'stored': True}
 
 
+@api.put('/history/{identifier}/filename')
+async def upgrade_history_filename(identifier: str, request: Request, owner: VerifiedOwner = Depends(require_owner)):
+    history.get(owner, identifier)
+    if request.headers.get('content-type', '').split(';')[0] != 'application/octet-stream':
+        raise HTTPException(415, 'Send the protected filename as opaque binary data.')
+    payload = await read_bounded(request, 64 * 1024)
+    return await asyncio.to_thread(history.upgrade_filename, owner, identifier, payload)
+
+
+@api.put('/history/{identifier}/replacements')
+def add_history_replacements(identifier: str, projection: ReplacementProjection, owner: VerifiedOwner = Depends(require_owner)):
+    return history.add_replacements(owner, identifier, projection)
+
+
 @api.get('/history/{identifier}/artifacts/{kind}')
 def get_artifact(identifier: str, kind: str, owner: VerifiedOwner = Depends(require_owner)):
     return Response(history.artifact(owner, identifier, kind), media_type='application/octet-stream',
@@ -317,6 +341,14 @@ def is_local_origin(origin: str) -> bool:
 
 def create_app(frontend_dir: Path = FRONTEND_ROOT):
     application = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError):
+        if request.url.path.startswith('/api/service/tide/setup/'):
+            # FastAPI normally echoes invalid inputs, including raw passwords
+            # before SecretStr validation. Never return those from setup APIs.
+            return JSONResponse({'detail': 'Check the setup fields and try again.'}, status_code=422)
+        return await request_validation_exception_handler(request, error)
     dev_origin = os.environ.get('PRIVACY_DEV_ORIGIN')
     if dev_origin and not is_local_origin(dev_origin):
         raise ValueError('PRIVACY_DEV_ORIGIN must be an exact localhost or 127.0.0.1 origin, including its port.')
@@ -329,16 +361,45 @@ def create_app(frontend_dir: Path = FRONTEND_ROOT):
         if not is_local_origin(server_origin):
             response = JSONResponse({'detail': 'Host not allowed.'}, status_code=403)
         elif ((origin and origin not in {server_origin, dev_origin})
-              or request.headers.get('sec-fetch-site') == 'cross-site'):
+              or request.headers.get('sec-fetch-site') == 'cross-site') and not (
+                  request.method in {'GET', 'HEAD'} and (request.url.path.startswith('/tide_dpop/iss/')
+                  or (request.url.path in {'/', '/secure-history/setup'} and request.headers.get('sec-fetch-mode') == 'navigate'))):
             response = JSONResponse({'detail': 'Origin not allowed.'}, status_code=403)
         else:
             response = await call_next(request)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
         return response
 
+    application.include_router(tide_router)
+    application.include_router(onboarding_router)
     application.include_router(api)
 
+    @application.api_route('/tide_dpop/iss/{issuer}/aud/{client}/tide_dpop_auth.html', methods=['GET', 'HEAD'])
+    def dpop_relay(issuer: str, client: str, request: Request):
+        config = tide_config.load()
+        if not config:
+            from backend.tide_onboarding import provisional_config
+            config = provisional_config()
+        try:
+            if (not config or len(issuer) > 2048 or len(client) > 256
+                    or bytes.fromhex(issuer).decode() != config['issuer']
+                    or bytes.fromhex(client).decode() != config['client_id']):
+                raise ValueError
+        except (ValueError, UnicodeError):
+            raise HTTPException(403, 'Issuer or client mismatch.') from None
+        return FileResponse(frontend_dir / 'tide_dpop_auth.html', media_type='text/html', headers={
+            'Content-Security-Policy': (frontend_dir / 'tide-dpop-csp.txt').read_text(),
+            'Allow-CSP-From': '*',
+        })
+
+
+    @application.get('/tide_dpop_auth.html')
+    def unbound_relay():
+        raise HTTPException(404, 'Not found.')
+
+    @application.get('/secure-history/setup')
     @application.get('/secure-history')
     @application.get('/disclaimer')
     def information_page():

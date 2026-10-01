@@ -24,6 +24,7 @@ LIMITATIONS = (
     'The model can miss sensitive information or flag ordinary text. Review the output before sharing.',
     'Sensitivity is a detection setting, not a confidence or accuracy score.',
     'Layout preservation applies to the original file format; other download formats are rewritten.',
+    'Document properties are removed in every mode. Embedded image metadata is not scanned.',
 )
 
 

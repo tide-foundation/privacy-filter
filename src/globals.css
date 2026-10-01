@@ -275,3 +275,39 @@ dialog pre { font: 13px/1.8 Inter, sans-serif; white-space: pre-wrap; overflow-w
 @media (max-width: 640px) {
   .site-footer { width: calc(100% - 48px); margin-bottom: 24px; gap: 8px; }
 }
+
+/* Owner setup has its own guide page. */
+.tide-setup { border-top: 1px solid var(--line, #ccc); margin-top: 2rem; padding-top: 1.5rem; }
+.setup-steps { padding-left: 1.4rem; }
+.setup-steps > li { padding: .5rem 0 1.4rem .5rem; }
+.setup-steps h3 { font-size: 1rem; }
+.setup-command { display: flex; align-items: center; gap: 1rem; background: #eee; padding: .8rem; margin: .8rem 0; }
+.setup-command code { flex: 1; overflow-wrap: anywhere; font-size: .8rem; }
+.setup-form { display: grid; gap: 1rem; max-width: 32rem; margin: 1rem 0; }
+.setup-form label { display: grid; gap: .4rem; font-size: .9rem; }
+.setup-form input:not([type=checkbox]) { width: 100%; padding: .7rem; color: #111; background: #fff; border: 1px solid #999; border-radius: 0; }
+.setup-form .setup-check { display: flex; align-items: flex-start; gap: .6rem; }
+.setup-note { font-size: .8rem; color: #666; }
+.tide-setup details { margin: 1rem 0; }
+.tide-setup summary { cursor: pointer; font-size: .85rem; }
+.setup-branding { display: flex; align-items: center; gap: 1rem; }
+.setup-branding img { width: 45%; max-height: 10rem; object-fit: contain; }
+
+.decrypt-skeleton { display: inline-block; position: relative; overflow: hidden; height: 1em; background: #e4e4e1; vertical-align: middle; }
+.decrypt-skeleton::after, .action-decrypting::after { content: ''; position: absolute; inset: 0; background: #141414; transform-origin: left; animation: decrypt-cover 1.4s ease-in-out infinite; }
+.filename-skeleton { width: min(28ch, 100%); min-width: 10ch; height: 1.05em; }
+.action-decrypting { position: relative; overflow: hidden; }
+@keyframes decrypt-cover { 0%, 100% { transform: scaleX(.2); } 50% { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .decrypt-skeleton::after, .action-decrypting::after { animation: none; opacity: .5; } }
+
+.setup-checklist { list-style: none; padding: 0; margin: 1.5rem 0 2rem; display: grid; gap: .7rem; }
+.setup-checklist li { display: flex; align-items: center; gap: .7rem; color: #777; font-size: .85rem; }
+.setup-checklist li[aria-current=step] { color: #111; font-weight: 600; }
+.setup-checklist li.done { color: #444; }
+.setup-step-marker { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border: 1px solid #ccc; font-size: .75rem; flex-shrink: 0; }
+.setup-checklist li.done .setup-step-marker { background: #111; border-color: #111; color: #fff; }
+.setup-step-loader { height: .6rem; width: 3rem; background: linear-gradient(90deg, #111 0 50%, #eee 50%); background-size: 200% 100%; animation: setup-redaction 1.1s ease-in-out infinite alternate; }
+.setup-current { border-top: 1px solid #ccc; padding-top: 1rem; }
+.setup-loading { display: flex; align-items: center; gap: .8rem; padding: 2rem 0; }
+@keyframes setup-redaction { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .setup-step-loader { animation: none; } }

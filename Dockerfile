@@ -6,6 +6,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY index.html tsconfig.json vite.config.ts ./
 COPY src ./src
 COPY public ./public
+COPY scripts/tide-assets.mjs ./scripts/
 RUN npm run build
 
 # Build Python dependencies separately so git/pip caches stay out of the runtime.

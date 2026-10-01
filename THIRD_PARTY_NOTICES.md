@@ -102,3 +102,18 @@ Build and test tools retain their own licences even though Node and those tools
 are not production servers. Examples include Vite under MIT, and TypeScript and
 Playwright under Apache-2.0. Nothing in this file grants rights beyond the
 applicable component licences.
+
+## Optional Tide integration
+
+The browser integration uses `@tidecloak/js` 0.14.34 and its locked Tide
+cryptographic dependencies. They retain their **Tide Community Open Code
+License**, which is not MIT. The package's unmodified full notice is served at
+[public/licenses/Tide-Community-Open-Code.txt](public/licenses/Tide-Community-Open-Code.txt).
+The SDK relay page and its CSP are copied together from the installed SDK during
+build; they are Tide-supplied assets. Dependency sources and versions are recorded
+in `package-lock.json` and the [setup guide](docs/tidecloak-setup.md).
+
+TideCloak runs in its separately distributed upstream container, pinned by digest
+in `compose.yaml`; its licences and notices remain in that image. Adding the
+integration does not relicense Tide software under Redacted's MIT grant. Review
+all applicable component licences before redistributing a combined deployment.

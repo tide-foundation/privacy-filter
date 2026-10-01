@@ -5,13 +5,15 @@ import { categoryLabels } from './types';
 
 export type RevealValues = (signal: AbortSignal) => Promise<RevealedDetection[]>;
 
-export function ReviewPanel({ review, onClose, onReveal }: {
+export function ReviewPanel({ id, review, onClose, onReveal }: {
+  id?: string;
   review: DetectionReview;
   onClose: () => void;
   onReveal?: RevealValues;
 }) {
   const [values, setValues] = useState<RevealedDetection[] | null>(null);
   const [pending, setPending] = useState(false);
+  const [replacements, setReplacements] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
   const clearValues = useCallback(() => {
@@ -19,7 +21,7 @@ export function ReviewPanel({ review, onClose, onReveal }: {
     setValues(null); setPending(false); setError('');
   }, []);
   useEffect(() => {
-    clearValues();
+    clearValues(); setReplacements({});
     const hide = () => { if (document.visibilityState === 'hidden') clearValues(); };
     document.addEventListener('visibilitychange', hide);
     window.addEventListener('pagehide', clearValues);
@@ -36,17 +38,20 @@ export function ReviewPanel({ review, onClose, onReveal }: {
     setPending(true); setError('');
     try {
       const originals = await onReveal(controller.signal);
-      if (!controller.signal.aborted && request.current === controller) setValues(originals);
+      if (!controller.signal.aborted && request.current === controller) {
+        setValues(originals);
+        setReplacements(Object.fromEntries(originals.flatMap(value => value.replacement === undefined ? [] : [[`${value.category}:${value.occurrence}`, value.replacement]])));
+      }
     } catch {
       if (!controller.signal.aborted && request.current === controller) setError('Could not reveal the values. Please try again.');
     } finally {
       if (request.current === controller) { request.current = null; setPending(false); }
     }
   }
-  const revealed = new Map(values?.map(value => [`${value.category}:${value.occurrence}`, value.original]));
+  const revealed = new Map(values?.map(value => [`${value.category}:${value.occurrence}`, value]));
   const active = values !== null || pending;
   const report = review.scan_report;
-  return <section className="review-panel" aria-label="Detection review">
+  return <section id={id} className="review-panel" aria-label="Detection review">
     <div className="preview-header review-heading"><h2>Detections</h2><div className="review-actions">
       {review.detections.length > 0 && <button className="text-button reveal-button" disabled={!onReveal} aria-label={active ? 'Hide original values' : 'Reveal original values'} aria-pressed={values !== null} onClick={() => void toggle()}>
         {active ? <EyeOff size={14}/> : <Eye size={14}/>} {active ? 'Hide values' : 'Reveal values'}
@@ -55,11 +60,12 @@ export function ReviewPanel({ review, onClose, onReveal }: {
     </div></div>
     {review.detections.length ? <div className="detection-list">{review.detections.map(detection => {
       const key = `${detection.category}:${detection.occurrence}`;
-      const original = revealed.get(key);
+      const value = revealed.get(key);
+      const original = value?.original;
       return <div className="detection-row" key={key}>
         <span className="detection-category">{categoryLabels[detection.category] || detection.category} <small>#{detection.occurrence}</small></span>
         {original !== undefined ? <span className="revealed-value">{original}</span> : <span className="concealed-value" aria-label="Original value concealed" aria-busy={pending}>{pending && <span className="reveal-wait" aria-hidden="true"/>}</span>}
-        <span className="replacement-value">{detection.replacement}</span>
+        <span className="replacement-value">{detection.replacement ?? replacements[key] ?? (pending ? <span className="concealed-value" aria-label="Loading replacement" aria-busy="true"><span className="reveal-wait" aria-hidden="true"/></span> : <span title="This older file stores replacements with its originals. Reveal once to load them.">—</span>)}</span>
       </div>;
     })}</div> : <p className="review-note">No sensitive text detected.</p>}
     {error && <p className="review-note" role="alert">{error}</p>}

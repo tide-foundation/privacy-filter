@@ -40,7 +40,7 @@ def test_one_server_serves_frontend_and_api_without_exposing_private_files(serve
         assert client.get('/api/service/health').json()['service'] == 'ready'
         assert client.get('/api/service/guest/current').json()['document'] is None
         assert client.get('/api/service/documents').status_code == 404
-        for route in ('/secure-history', '/disclaimer'):
+        for route in ('/secure-history', '/secure-history/setup', '/disclaimer'):
             information_page = client.get(route)
             assert information_page.status_code == 200
             assert information_page.text == page.text

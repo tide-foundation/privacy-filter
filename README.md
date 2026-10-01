@@ -56,7 +56,7 @@ Guest mode keeps **one current document per browser session**. Uploading another
 
 Guest filenames and detected original values stay in temporary server memory. Generated guest files use temporary memory-backed storage in Docker. The local server can read document contents while processing; concealed values in the interface are not encryption. See [where data lives](docs/development.md#storage-and-privacy-boundaries).
 
-**Secure history is not available yet.** Its interface and storage boundaries are prepared, but TideCloak authentication and encryption are future work. There are no working accounts or encrypted saved documents in this release. [Integration status](docs/secure-history.md).
+**Optional encrypted history:** the TideCloak integration is ready for owner setup and live-account testing. It runs as a separate, optional local Docker service and uses Tide’s network for authentication and encryption. Run `python3 scripts/tidecloak.py start` once after the app is running. It opens an authorized setup wizard inside Redacted; no setup-code entry or routine admin-console visits. The [setup guide](docs/tidecloak-setup.md) also covers using an existing local TideCloak server. Guest mode works without it. Live sign-in, account linking and unattended self-registration must be verified on your installation before relying on saved history.
 
 ## Join in
 
@@ -66,4 +66,4 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). For setup without Docker, test co
 
 ## Licence
 
-Redacted-original application code is available under the [MIT licence](LICENSE). **The complete runtime is not MIT-only:** it includes PyMuPDF/MuPDF under AGPL terms. Redistribution or hosted deployments must account for those terms; the MIT licence does not replace them. See [third-party notices](THIRD_PARTY_NOTICES.md) for dependency and model licences, and [branding and fonts](docs/branding.md) for font licences and Tide marks.
+Redacted-original application code is available under the [MIT licence](LICENSE). **The complete runtime is not MIT-only:** it includes PyMuPDF/MuPDF under AGPL terms and Tide SDK components under their Tide Community Open Code licence. Redistribution or hosted deployments must account for those terms; the MIT licence does not replace them. See [third-party notices](THIRD_PARTY_NOTICES.md) for dependency and model licences, and [branding and fonts](docs/branding.md) for font licences and Tide marks.

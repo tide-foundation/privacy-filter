@@ -20,3 +20,6 @@
 !THIRD_PARTY_NOTICES.md
 !licenses/
 !licenses/**
+
+!scripts/tide-assets.mjs
+**/*Zone.Identifier
