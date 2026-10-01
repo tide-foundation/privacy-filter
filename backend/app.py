@@ -340,7 +340,8 @@ def create_app(frontend_dir: Path = FRONTEND_ROOT):
     application.include_router(api)
 
     @application.get('/secure-history')
-    def secure_history_page():
+    @application.get('/disclaimer')
+    def information_page():
         return FileResponse(frontend_dir / 'index.html')
     # Only the compiled frontend is public. Data and model directories stay outside
     # this mount; StaticFiles also blocks traversal and escaping symlinks.

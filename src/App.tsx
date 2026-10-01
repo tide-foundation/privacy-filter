@@ -8,6 +8,7 @@ import type { SecureHistoryProvider } from './history';
 import { ReviewPanel } from './ReviewPanel';
 import { AccountMenu } from './AccountMenu';
 import { SecureHistoryPage } from './SecureHistoryPage';
+import { DisclaimerPage } from './DisclaimerPage';
 
 type Health = { model_installed: boolean; model_loaded: boolean; device: string };
 function HelpTip({ label, children }: { label: string; children: React.ReactNode }) {
@@ -67,6 +68,7 @@ export default function App({ historyProvider = unavailableHistoryProvider }: { 
   const previousIdentity = useRef<string | null>(historyProvider === unavailableHistoryProvider ? identityKey : null);
   const resetRequest = useRef<AbortController | null>(null);
   const processing = current?.status === 'queued' || current?.status === 'processing';
+  const summaryWarning = current?.warning?.replace('Images are preserved but are not scanned for sensitive data.', '').trim();
 
   const closeDetails = useCallback(() => {
     detailRequest.current?.abort(); detailRequest.current = null;
@@ -229,10 +231,10 @@ export default function App({ historyProvider = unavailableHistoryProvider }: { 
   const waiting = choosing ? 'Preparing file…' : busy ? 'Uploading…' : file && (!health || !csrf) && !connection ? 'Checking service…' : '';
   return <>
     <header className="topbar">
-      <a className="brand" href="/" aria-label="Redacted home" onClick={event => { event.preventDefault(); navigate('/'); }}><img src="/brand/redacted-logo.svg" alt="Redacted" width="308" height="97" /></a>
+      <a className="brand" href="/" aria-label="Redacted home" onClick={event => { event.preventDefault(); navigate('/'); }}><img src="/brand/redacted-logo.svg" alt="Redacted" width="2048" height="455" /></a>
       <AccountMenu identity={identity} provider={historyProvider} available={historyAvailable} onInformation={() => navigate('/secure-history')}/>
     </header>
-    {path === '/secure-history' ? <SecureHistoryPage identity={identity} provider={historyProvider} available={historyAvailable} navigate={navigate}/> : <main>
+    {path === '/disclaimer' ? <DisclaimerPage navigate={navigate}/> : path === '/secure-history' ? <SecureHistoryPage identity={identity} provider={historyProvider} available={historyAvailable} navigate={navigate}/> : <main>
       <h1 className="sr-only">Redact a document</h1>
       <form onSubmit={submit}>
         <input ref={input} id="document" type="file" accept=".pdf,.docx" onClick={() => setChoosing(true)} onChange={e => choose(e.target.files?.[0])} className="file-input" disabled={busy || processing}/>
@@ -277,7 +279,7 @@ export default function App({ historyProvider = unavailableHistoryProvider }: { 
             <h3><span className={`document-name${processing ? ' is-processing' : ''}`} title={current.filename || undefined}><span className="filename-text">{current.filename || `Document ${current.id.slice(0, 8)}`}</span>{processing && <><span className="redaction-loader" aria-hidden="true"/><span className="sr-only" role="status">{current.status === 'queued' ? 'Queued' : 'Processing'}</span></>}</span><span className="mode-pill">{modeLabels[current.mode]?.[current.status === 'complete' ? 1 : 0] || current.mode}</span>{current.status === 'failed' && <span className="status failed">Failed</span>}</h3>
             <p>{new Date(current.created).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
             {current.status === 'complete' && <div className="counts">{Object.entries(current.counts).length ? Object.entries(current.counts).map(([key, value]) => <span key={key}>{value} {categoryLabels[key]?.toLowerCase() || key}</span>) : <span>No detections</span>}</div>}
-            {current.error && <p className="doc-error">{current.error}</p>}{current.warning && <p className="doc-warning">{current.warning}</p>}
+            {current.error && <p className="doc-error">{current.error}</p>}{summaryWarning && <p className="doc-warning">{summaryWarning}</p>}
           </div><div className="doc-actions">
             {current.status === 'complete' && <><button className="text-button" onClick={() => openDetail('preview')}>Preview</button><button className="text-button" onClick={() => openDetail('review')}>Review detections</button>
               <div className="downloads">{(current.source_type === 'pdf' ? ['pdf', 'docx', 'txt'] : ['docx', 'pdf', 'txt']).map(ext => <a key={ext} title={current.source_type === ext && current.layout_preserved ? 'Original layout' : 'Rebuilt text'} href={`/api/service/guest/documents/${current.id}/download/${ext}`} aria-label={`Download ${ext.toUpperCase()} for document ${current.id.slice(0, 8)}`}><ArrowDownToLine size={13}/>{ext.toUpperCase()}</a>)}</div></>}
@@ -293,6 +295,10 @@ export default function App({ historyProvider = unavailableHistoryProvider }: { 
       </section>
       {historyAvailable && identity.status === 'authenticated' && <HistoryPanel key={identity.ownerKey} provider={historyProvider} identity={identity}/>}
     </main>}
+    <footer className="site-footer">
+      <span>A Tide community project · <a href="https://github.com/tide-foundation/redacted" target="_blank" rel="noopener noreferrer">GitHub</a></span>
+      <p>No guarantees of complete redaction. Review before sharing. <a href="/disclaimer" onClick={event => { event.preventDefault(); navigate('/disclaimer'); }}>Full disclaimer</a></p>
+    </footer>
     <dialog ref={dialog} onCancel={closeDetails} onClick={event => { if (event.target === event.currentTarget) closeDetails(); }}><div className="preview-header"><h2>Preview</h2><button aria-label="Close preview" onClick={closeDetails}><X/></button></div><pre>{preview?.text}</pre></dialog>
   </>;
 }

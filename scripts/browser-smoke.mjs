@@ -84,12 +84,14 @@ try {
   docs[0].status = 'complete';
   docs[0].source_type = 'pdf';
   docs[0].layout_preserved = false;
-  docs[0].warning = 'Original layout unavailable; clean rewrite used.';
+  docs[0].warning = 'Images are preserved but are not scanned for sensitive data. Original layout unavailable; clean rewrite used.';
   await page.getByText('2 names', { exact: true }).waitFor();
   assert.equal(await page.locator('.redaction-loader').count(), 0);
   assert.equal(await page.getByText(uploadName, { exact: true }).count(), 1);
   assert.match(await page.locator('.mode-pill').first().innerText(), /Replaced/);
   await page.getByText('Original layout unavailable; clean rewrite used.').waitFor();
+  assert.equal(await page.locator('.document-row .doc-warning').innerText(), 'Original layout unavailable; clean rewrite used.');
+  assert.equal(await page.locator('.document-row').getByText('Images are preserved but are not scanned for sensitive data.', { exact: false }).count(), 0);
   assert.equal(await page.getByRole('link', { name: /Download PDF/ }).getAttribute('title'), 'Rebuilt text');
   assert.equal(await page.getByText('complete', { exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();

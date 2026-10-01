@@ -49,7 +49,7 @@ All routes below use `/api/service`. Sensitive responses have `Cache-Control: no
 | `PUT, GET /history/{id}/artifacts/{kind}` | Verified-owner opaque binary upload/retrieval |
 | `POST /history/{id}/commit` | Verified-owner publication after all protected artifacts exist |
 
-The old global `/documents` routes are removed. Unknown API routes remain JSON 404s. `/secure-history` is an explicit UI entry point; static serving never exposes `data/` or model files.
+The old global `/documents` routes are removed. Unknown API routes remain JSON 404s. `/secure-history` and `/disclaimer` are explicit UI entry points; static serving never exposes `data/` or model files.
 
 The processing boundary is deliberately transient and separate from durable history. Final authenticated reprocessing can retrieve ciphertext, decrypt it in the browser, and submit the resulting source through the working-document pipeline. A narrow verified-owner plus current-session manifest handoff is prepared for the final secure-save flow and currently fails closed. No server-side decryption is provided. Guest reveal reads only the current guest’s RAM manifest; it never decrypts or accesses durable history.
 
@@ -77,7 +77,7 @@ Required final tests include invalid/expired/wrong-issuer/audience/signature tok
 
 ## Migration and deployment
 
-Legacy unowned data is explicitly disposable for this installation. The migration drops the global table and removes legacy UUID output directories; it never assigns them to a new user or claims they are encrypted. Guest results intentionally do not survive restart. Model reuse, the `redacted-model` volume, one Uvicorn worker, local-only binding and the approximately 1.7 GB application image remain intact.
+Upgrading from a legacy version drops the global unowned document table and removes its UUID output directories. Export any legacy files you need before upgrading. The migration never assigns old data to a new user or claims it is encrypted. Guest results intentionally do not survive restart. Model reuse, the `redacted-model` volume, one Uvicorn worker, local-only binding and the approximately 1.7 GB application image remain intact.
 
 Public hosting is outside this change. It would need explicit allowed origins, HTTPS, proxy configuration, suitable quotas and operational data/key policies. Do not remove the local request checks merely to expose the service publicly.
 

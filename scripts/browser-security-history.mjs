@@ -6,10 +6,11 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
 const errors = [], paths = [], revealRequests = [];
 page.on('pageerror', error => errors.push(error.message));
 const base = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const imageWarning = 'Images are preserved but are not scanned for sensitive data.';
 const originals = { private_person: 'Alice Fixture Original ' + 'unbroken-original-value-'.repeat(16), private_date: '12 February 2001' };
 const makeDocument = id => ({
   id, filename: 'Private report.pdf', created: new Date().toISOString(), status: 'complete', mode: 'redact', sensitivity: 75,
-  source_type: 'pdf', layout_preserved: false, counts: { private_person: 1, private_date: 1 },
+  source_type: 'pdf', layout_preserved: false, warning: imageWarning + ' Original layout unavailable; clean rewrite used.', counts: { private_person: 1, private_date: 1 },
 });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 let document = makeDocument('22222222-2222-4222-8222-222222222222');
@@ -31,7 +32,7 @@ await page.route('**/api/service/**', async route => {
   else if (path.endsWith('/review')) body = {
     detections: [{ category: 'private_person', occurrence: 1, replacement: '******' }, { category: 'private_date', occurrence: 1, replacement: '**/**/**' }],
     scan_report: { sensitivity: 75, counts: document.counts, total_detections: 2, source_type: '.pdf', layout_preserved: false, ocr_performed: false,
-      warnings: ['Original layout unavailable; clean rewrite used.'], limitations: ['Images are not scanned for sensitive data.'] },
+      warnings: [imageWarning, 'Original layout unavailable; clean rewrite used.'], limitations: ['Images are not scanned for sensitive data.'] },
   };
   else if (path.endsWith('/revealed-detections')) {
     assert.equal(request.method(), 'GET');
@@ -60,6 +61,13 @@ async function replacementColumns() {
     return { x: rect.x, width: rect.width };
   }));
 }
+async function assertFooter() {
+  const footer = page.getByRole('contentinfo');
+  await footer.waitFor();
+  assert.equal(await footer.locator('a[href="https://github.com/tide-foundation/redacted"]').count(), 1);
+  assert.equal(await footer.getByRole('link', { name: 'Full disclaimer', exact: true }).getAttribute('href'), '/disclaimer');
+  assert.match(await footer.innerText(), /guarantee/i);
+}
 async function openReview() {
   await page.getByRole('button', { name: 'Review detections', exact: true }).click();
   await page.getByRole('region', { name: 'Detection review' }).waitFor();
@@ -67,14 +75,28 @@ async function openReview() {
 try {
   await page.goto(`${base}/secure-history`);
   await page.getByRole('heading', { name: 'Secure your history', exact: true }).waitFor();
+  await assertFooter();
   assert.match(await page.locator('main').innerText(), /both free/);
   assert.match(await page.locator('main').innerText(), /not configured/);
   assert.equal(await page.getByRole('button', { name: 'Sign in to keep history', exact: true }).isDisabled(), true);
   assert.equal(await page.locator('.topbar').getByText('Secure history', { exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Back to redacting', exact: false }).click();
+  await assertFooter();
+  await page.getByRole('link', { name: 'Full disclaimer', exact: true }).click();
+  await page.getByRole('heading', { name: 'Disclaimer', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/disclaimer');
+  await assertFooter();
+  await page.reload();
+  await page.getByRole('heading', { name: 'Disclaimer', exact: true }).waitFor();
+  await assertFooter();
+  await page.getByRole('button', { name: 'Back to redacting', exact: false }).click();
+  await page.getByRole('button', { name: 'Review detections', exact: true }).waitFor();
+  assert.equal(await page.locator('.document-row .doc-warning').innerText(), 'Original layout unavailable; clean rewrite used.');
+  assert.equal(await page.locator('.document-row').getByText(imageWarning, { exact: false }).count(), 0);
   await page.getByRole('button', { name: 'Review detections', exact: true }).click();
   await page.getByRole('region', { name: 'Detection review' }).waitFor();
   await assertConcealed();
+  assert.equal(await page.getByRole('region', { name: 'Detection review' }).getByText(imageWarning, { exact: true }).count(), 1);
   assert.equal(await revealValues().innerText(), 'Reveal values');
   assert.deepEqual(revealRequests, []);
   for (const original of Object.values(originals)) assert.equal(await page.getByText(original, { exact: true }).count(), 0);
@@ -192,7 +214,11 @@ try {
   assert.equal(paths.some(path => path === '/api/service/documents' || path.includes('/history')), false);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await assertFooter();
+  await page.getByRole('link', { name: 'Full disclaimer', exact: true }).click();
+  await page.getByRole('heading', { name: 'Disclaimer', exact: true }).waitFor();
+  await assertFooter();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
   assert.deepEqual(errors, []);
-  console.log('Security-history UI passed: one bulk reveal/hide control, stable columns at desktop/mobile widths, hide/close/tab/expiry cancellation, account information, truthful report and no browser persistence.');
+  console.log('Security-history UI passed: one bulk reveal/hide control, stable columns at desktop/mobile widths, hide/close/tab/expiry cancellation, account information, detail-only image warning, permanent footer/disclaimer navigation, truthful report and no browser persistence.');
 } finally { heldOriginal?.release.resolve(); delayedPreview.resolve(); await browser.close(); }

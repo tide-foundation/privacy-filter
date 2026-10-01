@@ -32,6 +32,8 @@ COPY --from=python-deps /opt/venv /opt/venv
 COPY --from=frontend /build/dist ./dist
 COPY backend/*.py ./backend/
 COPY scripts/download-model.py scripts/start-server.sh ./scripts/
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
+COPY licenses ./licenses
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
